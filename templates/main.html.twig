@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>Графік з сигналами</title>
+    <!-- Підключаємо AnyChart -->
+    <script src="https://cdn.anychart.com/releases/8.13.0/js/anychart-core.min.js" type="text/javascript"></script>
+    <script src="https://cdn.anychart.com/releases/8.13.0/js/anychart-stock.min.js" type="text/javascript"></script>
+    <script src="https://cdn.anychart.com/releases/8.13.0/js/anychart-annotations.min.js"></script>
+    <style>
+        /* Скидаємо стандартні стилі */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+            Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: #f5f5f7;
+            color: #1d1d1f;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        #chartContainer {
+            width: 100%;
+            height: 60vh;
+            background-color: #ffffff;
+            border-bottom: 1px solid #d2d2d7;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            background-color: #f5f5f7;
+        }
+
+        .controls label {
+            margin: 10px;
+            font-size: 16px;
+            color: #1d1d1f;
+        }
+
+        .controls input, .controls select {
+            margin: 10px;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #d2d2d7;
+            border-radius: 8px;
+            background-color: #ffffff;
+            color: #1d1d1f;
+            outline: none;
+        }
+
+        .controls input:focus, .controls select:focus {
+            border-color: #007aff;
+        }
+
+        .controls button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #007aff;
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .controls button:hover {
+            background-color: #0051a8;
+        }
+
+        @media (max-width: 1200px) {
+            .controls {
+                flex-direction: column;
+                width: 100%;
+                justify-content: space-around
+            }
+
+            .controls label, .controls input, .controls select, .controls button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+<!-- Контейнер для графіка -->
+<div id="chartContainer"></div>
+
+<div class="controls">
+    <label for="from">Від:</label>
+    <input type="datetime-local" id="from" name="from" required>
+
+    <label for="to">До:</label>
+    <input type="datetime-local" id="to" name="to" required>
+
+    <label for="timeframe">Таймфрейм:</label>
+    <select id="timeframe" name="timeframe" required>
+        <option value="1m">1 хвилина</option>
+        <option value="5m">5 хвилин</option>
+        <option value="15m" selected>15 хвилин</option>
+        <option value="30m">30 хвилин</option>
+        <option value="1h">1 година</option>
+        <option value="4h">4 години</option>
+        <option value="1d">1 день</option>
+    </select>
+
+    <label for="symbol">Символ:</label>
+    <input type="text" id="symbol" name="symbol" value="BTCUSDT" required>
+
+    <button id="updateButton">Оновити графік</button>
+</div>
+
+<!-- JavaScript-код для побудови графіка -->
+<script>
+    document.getElementById('updateButton').addEventListener('click', function () {
+        // Отримуємо значення з полів вводу
+        let from = document.getElementById('from').value;
+        let to = document.getElementById('to').value;
+        let timeframe = document.getElementById('timeframe').value;
+        let symbol = document.getElementById('symbol').value;
+
+        if (!from || !to || !timeframe || !symbol) {
+            alert('Будь ласка, заповніть всі поля.');
+            return;
+        }
+
+        // Перетворюємо дату у мітку часу (timestamp)
+        let fromTimestamp = new Date(from).getTime() / 1000;
+        let toTimestamp = new Date(to).getTime() / 1000;
+
+        if (fromTimestamp >= toTimestamp) {
+            alert('Дата "Від" повинна бути раніше дати "До".');
+            return;
+        }
+
+        // Формуємо URL для запиту даних
+        let url = '{{ path('api') }}?from=' + fromTimestamp + '&to=' + toTimestamp + '&timeframe=' + timeframe + '&symbol=' + symbol;
+
+        // Завантажуємо дані з бекенду
+        fetch(url)
+            .then(response => response.json())
+            .then(data => {
+                // Викликаємо функцію для побудови графіка
+                drawChart(data, symbol);
+            })
+            .catch(error => {
+                console.error('Помилка завантаження даних:', error);
+                alert('Не вдалося завантажити дані.');
+            });
+    });
+
+    function drawChart(data, symbol) {
+        // Перевіряємо, чи є дані для відображення
+        if (!data || !data.candles || data.candles.length === 0) {
+            alert('Немає даних для відображення на вказаний період.');
+            return;
+        }
+
+        // Створюємо масив даних для свічок
+        let candlesData = data.candles.map(function (item) {
+            return [
+                new Date(item.timeStamp),
+                item.openPrice,
+                item.highestBid,
+                item.lowestBid,
+                item.closePrice
+            ];
+        });
+
+        // Створюємо таблицю даних для AnyChart
+        let dataTable = anychart.data.table();
+
+        dataTable.addData(candlesData);
+
+        let mapping = dataTable.mapAs();
+        mapping.addField('open', 1, 'first');
+        mapping.addField('high', 2, 'max');
+        mapping.addField('low', 3, 'min');
+        mapping.addField('close', 4, 'last');
+        mapping.addField('value', 4, 'last');
+
+        let chart = anychart.stock();
+// create a plot on the chart
+        let plot = chart.plot(0);
+        plot.removeAllSeries();
+
+        // Додаємо маркери для сигналів, якщо вони є
+        if (data.signals && data.signals.length > 0) {
+            // Групуємо сигнали за датою, напрямком та типом
+// Сортуємо сигнали за часом
+            const sortedSignals = data.signals.sort((a, b) => a.timeStamp - b.timeStamp);
+
+            // Групуємо сигнали по 5 штук
+            const groupSize = 5;
+            const groupedSignals = [];
+
+            for (let i = 0; i < sortedSignals.length; i += groupSize) {
+                const group = sortedSignals.slice(i, i + groupSize);
+                groupedSignals.push(group);
+            }
+
+            // Створюємо markersData на основі згрупованих сигналів
+            const markersData = groupedSignals.map(group => {
+                // Визначаємо напрямок та осцилятор за першим сигналом у групі
+                const direction = group[0].direction;
+                const oscillator = group[0].from;
+
+                // Розраховуємо тривалість сигналу
+                const minTime = group[0].timeStamp;
+                const maxTime = group[group.length - 1].timeStamp;
+                const duration = maxTime - minTime;
+
+                // Конвертуємо тривалість у читабельний формат
+                const durationHours = Math.floor(duration / 3600000);
+                const durationMinutes = Math.floor((duration % 3600000) / 60);
+
+                let durationStr = '';
+                if (durationHours > 0) {
+                    durationStr += `${durationHours} год `;
+                }
+                if (durationMinutes > 0) {
+                    durationStr += `${durationMinutes} хв`;
+                }
+                if (durationStr === '') {
+                    durationStr = 'менше хвилини';
+                }
+
+                // Визначаємо дату для маркера (час першого сигналу в групі)
+                const date = new Date(minTime); // Конвертуємо в мілісекунди
+
+                // Готуємо опис
+                const description = `${oscillator}: ${direction === 1 ? 'Бичачий' : 'Ведмежий'} сигнал. Тривалість: ${durationStr}`;
+
+                // Готуємо лейбл - літера плюс тип сигналу
+                const label = `${direction === 1 ? 'L' : 'S'} ${oscillator}`;
+
+                return {
+                    date: date,
+                    description: description,
+                    direction: direction,
+                    from: oscillator,
+                    label: label
+                };
+            });
+
+            let groupedByLabelData = {}
+
+            markersData.forEach(
+                function (marker) {
+                    if (groupedByLabelData[marker.from] === undefined) {
+                        groupedByLabelData[marker.from] = {}
+                    }
+
+                    if (groupedByLabelData[marker.from][marker.direction] === undefined) {
+                        groupedByLabelData[marker.from][marker.direction] = [marker]
+                    } else {
+                        groupedByLabelData[marker.from][marker.direction].push(marker)
+                    }
+                }
+            )
+
+            let groups = []
+
+            for (const [oscillatorName, element] of Object.entries(groupedByLabelData)) {
+                for (const [signalDirection, groupedLocalSignals] of Object.entries(element)) {
+                    groups.push({
+                        "format": ((parseInt(signalDirection) === 1) ? 'L' : 'S') + ' ' + oscillatorName,
+                        "data": groupedLocalSignals
+                    })
+                }
+            }
+
+            plot.eventMarkers(
+                {
+                    "groups": groups
+                }
+            );
+
+            // Додаємо маркери на графік
+            plot.eventMarkers().position("series");
+            plot.eventMarkers().seriesId(0);
+
+        }
+
+
+        // Налаштовуємо вісь X
+        chart.scroller().enabled(true);
+        // set the series type
+        chart.plot(0).ohlc(mapping).name(symbol);
+
+        // setting the chart title
+        chart.title('Multifactor Crypto Analysis');
+
+        document.getElementById("chartContainer").innerHTML = '';
+        // display the chart
+        chart.container('chartContainer');
+        chart.draw();
+    }
+</script>
+</body>
+</html>
